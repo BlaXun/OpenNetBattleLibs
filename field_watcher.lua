@@ -40,7 +40,8 @@ function field_watcher.create_watcher(entity, field)
 
   watcher.on_tile_state_did_change = nil
   watcher.on_tile_team_did_change = nil
-
+  watcher.on_update = nil
+  watcher.total_frames_processed = 0
   watcher.all_tiles = function(self)
     return self.field:find_tiles(function(t)
       return not t:is_edge()
@@ -80,7 +81,12 @@ function field_watcher.create_watcher(entity, field)
   end
 
   watcher.update_func = function(self, elapsed_time)
+    self.total_frames_processed = self.total_frames_processed+elapsed_time
     self:compare_tiles()
+
+    if self.on_update ~= nil then
+      self:on_update(elapsed_time)
+    end
   end
 
   watcher.register = function(self)
@@ -88,7 +94,9 @@ function field_watcher.create_watcher(entity, field)
   end
 
   watcher.unregister = function(self)
-    self:eject()
+    if self:is_injected() then
+      self:eject()
+    end
   end
 
   return watcher
