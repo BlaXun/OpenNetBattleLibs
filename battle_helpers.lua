@@ -19,9 +19,45 @@ function battle_helpers.does_artifact_with_name_for_team_exist_on_field(artifact
   return #artifacts > 0
 end
 
-function battle_helpers.get_enemy_tiles(field, user)
+-- TODO: Test this one!
+function battle_helpers.create_shakre_effect(entity, duration_in_seconds, strength)
+  local shake_artifact = Battle.Artifact.new()
+  local time = 0
+
+  shake_artifact.update_func = function(self, delta)
+      time = time+delta;
+      self:shake_camera(strength, duration_in_seconds)
+      if time >= duration_in_seconds then
+        self:delete()
+      end
+  end
+
+  entity:get_field():spawn(shake_artifact, entity:get_current_tile())
+end
+
+--- get_random_enemy_tile
+-- Returns a random tile that belongs to the opponents of the given entity
+-- @param entity The entity for which enemies a random tle should be returned
+-- @return A tile or nil
+function battle_helpers.get_random_enemy_tile(entity)
+
+	local enemy_tiles = battle_helpers.get_enemy_tiles(entity)
+	local random_tile = nil -- Or a default tile, in case there are no valid tiles
+	if #enemy_tiles > 0 then
+	  random_tile = enemy_tiles[math.random(1, #enemy_tiles)]
+	end
+	
+	return random_tile
+end
+
+--- get_enemy_tiles
+-- Returns all tiles for the opposing faction of this entity
+-- @param entity The entity for which enemies the tiles should be returned
+-- @return A list with all enemy tiles
+function battle_helpers.get_enemy_tiles(entity)
+  local field = entity:get_field()
 	local enemy_tiles = field:find_tiles(function(t)
-	  return not t:is_edge() and t:get_team() ~= user:get_team()
+	  return not t:is_edge() and t:get_team() ~= entity:get_team()
 	end)
 	
 	return enemy_tiles
@@ -36,8 +72,13 @@ function battle_helpers.all_tiles_with_state(field, state)
 	return tiles_with_state
 end
 
-function battle_helpers.get_enemy_last_row_tiles(field, user)
+--- get_enemy_last_column_tiles
+-- Returns all tiles at the very last column of the enemies to that user
+-- @param The user for which all enemy tiles should be found
+-- @param A list of all tiles on the last colum
+function battle_helpers.get_enemy_last_column_tiles(user)
   local enemy_tiles = {}
+  local field = user:get_field()
   if user:get_team() == Team.Red then
     table.insert(enemy_tiles,field:tile_at(6,1))
     table.insert(enemy_tiles,field:tile_at(6,2))
@@ -51,29 +92,49 @@ function battle_helpers.get_enemy_last_row_tiles(field, user)
 	return enemy_tiles
 end
 
-function battle_helpers.spawn_visual_artifact(character,tile,texture,animation_path,animation_state,position_x,position_y,dont_flip_offset)
-  local visual_artifact = Battle.Artifact.new()
-  --visual_artifact:hide()
-  visual_artifact:set_texture(texture,true)
-  local anim = visual_artifact:get_animation()
-  local sprite = visual_artifact:sprite()
-  local field = character:get_field()
-  local facing = character:get_facing()
-  anim:load(animation_path)
-  anim:set_state(animation_state)
-  anim:on_complete(function()
-    visual_artifact:delete()
-  end)
-  if facing == Direction.Left and not dont_flip_offset then
-    position_x = position_x *-1
+--- spawn_visual_artifact
+-- Creates a visual artifact and returns it
+-- @param charachter A entity. The facing of this character is used to set the artifacts facing
+-- @param tile The tile on which the artifact should be spawned. If it is a edge tile and "show_alo_on_edge_tiles" is either not set or set to false no artifact will be created
+-- @oaram texture A texture that was previously loaded using Engine.load_texture
+-- @param animation_path The path to the .animation file of this vfx
+-- @param animation_state The state in the .animation file that shall be used
+-- @param position_x Horizontal offset to display the vfx
+-- @param position_y Vertical offset to display the vfx
+-- @param dont_flip_offset If set to true the given position_x and position_y values will not be flipped when facing is Direction.Left
+-- @param show_also_on_edge_tiles Wether to spawn the artifact even if the tile is an edge tile
+-- @return The created artifact or nil
+function battle_helpers.spawn_visual_artifact(character,tile,texture,animation_path,animation_state,position_x,position_y,dont_flip_offset,show_also_on_edge_tiles)
+
+  if show_also_on_edge_tiles == true or tile:is_edge() == false then
+    local visual_artifact = Battle.Artifact.new()
+    visual_artifact:set_texture(texture,true)
+    local anim = visual_artifact:get_animation()
+    local sprite = visual_artifact:sprite()
+    local field = character:get_field()
+    local facing = character:get_facing()
+    anim:load(animation_path)
+    anim:set_state(animation_state)
+    anim:on_complete(function()
+      visual_artifact:delete()
+    end)
+    if facing == Direction.Left and not dont_flip_offset then
+      position_x = position_x *-1
+    end
+    visual_artifact:set_facing(facing)
+    visual_artifact:set_offset(position_x,position_y)
+    anim:refresh(sprite)
+    field:spawn(visual_artifact, tile:x(), tile:y())
+    return visual_artifact
   end
-  visual_artifact:set_facing(facing)
-  visual_artifact:set_offset(position_x,position_y)
-  anim:refresh(sprite)
-  field:spawn(visual_artifact, tile:x(), tile:y())
-  return visual_artifact
+
+  return nil
 end
 
+--- find_all_enemis
+-- Returns a list of all enemies (Entity) on the field
+-- @param user The player for which all enemies should be returned
+-- @return A list containing all enemies
 function battle_helpers.find_all_enemies(user)
   local field = user:get_field()
   local user_team = user:get_team()
@@ -83,9 +144,15 @@ function battle_helpers.find_all_enemies(user)
       return true
     end
   end)
-  return list
+  return list    
 end
 
+--- find_targets_ahead
+-- Returns all targets for the given user that are on the same row infront of that user
+-- In This context targets are characters and obstacles
+--
+-- @param user The user (Entity) for which to return targets
+-- @return A list containing all found targets
 function battle_helpers.find_targets_ahead(user)
   local field = user:get_field()
   local user_tile = user:get_current_tile()
@@ -112,6 +179,12 @@ function battle_helpers.find_targets_ahead(user)
   return list
 end
 
+--- get_first_target_ahead
+-- Returns the first target for the given user that is on the same row infront of that user
+-- In This context targets are characters and obstacles
+--
+-- @param user The user (Entity) for which to return the first target
+-- @return Either a valid target (Character / Obstacle) or nil
 function battle_helpers.get_first_target_ahead(user,ignore_neutral_team)
   local targets = battle_helpers.find_targets_ahead(user)
   local filtered_targets = {}
